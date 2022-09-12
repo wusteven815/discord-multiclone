@@ -1,14 +1,15 @@
-from hashlib import md5
 from logging import getLogger
 from time import time
 
 from discord import Interaction
+from discord import TextChannel
 from discord.app_commands import Group
 from discord.ext.commands import GroupCog
 from discord.ext.tasks import loop
 
+from bot.utils import get_expiry
+from bot.utils import get_key
 from bot.utils import get_log_decorator
-from env import TOKEN
 
 log_as = get_log_decorator(getLogger(__name__))
 
@@ -44,19 +45,49 @@ class Copy(GroupCog, name="copy", description="Copy a Discord feature"):
 
     channel = Group(name="channel", description="Copy channel related features")
 
-    @channel.command(name="permissions", description="Copy channel permissions")
-    @log_as("/copy channel permissions")
-    async def copy_channel_permissions(self, interaction: Interaction):
+    async def _copy_channel_item(self, interaction: Interaction, item_name, item_value, public_name):
 
-        key = "c" + md5(f"{TOKEN}{interaction.user.id}{interaction.channel_id}{time()}".encode("utf-8")).hexdigest()
-        expiry = round(time()) + 600
+        async def reply(message):
+            await interaction.response.send_message(message, ephemeral=True)
 
-        self.bot.key_channel[key] = dict(guild=interaction.guild_id, overwrites=interaction.channel.overwrites)
+        # Check if correct channel type
+        if type(interaction.channel) != TextChannel:
+            await reply("This command can only be run in server text channels.")
+            return
+
+        key = "c" + get_key(interaction)
+        expiry = get_expiry()
+
+        self.bot.key_channel[key] = {
+            "guild": interaction.guild_id,
+            item_name: item_value}
         self.bot.user_key[str(interaction.user.id)] = key
         self.bot.key_user[key] = str(interaction.user.id)
         self.bot.expiry_key[str(expiry)] = key
 
-        await interaction.response.send_message(
-            f"Copied <#{interaction.channel_id}>'s permissions. You can paste the permissions by doing `/paste "
-            f"channel`. The copied data will expire at <t:{expiry}:t> (<t:{expiry}:R>)",
-            ephemeral=True)
+        await reply(f"Copied <#{interaction.channel_id}>'s {public_name}. You can paste the {public_name} by doing "
+                    f"`/paste channel`. The copied data will expire at <t:{expiry}:t> (<t:{expiry}:R>)")
+
+    @channel.command(name="permissions", description="Copy channel permissions")
+    @log_as("/copy channel permissions")
+    async def copy_channel_permissions(self, interaction: Interaction):
+        if len(interaction.channel.overwrites) == 0:
+            await interaction.response.send_message(
+                "This channel doesn't have any special permissions.",
+                ephemeral=True)
+        else:
+            await self._copy_channel_item(interaction, "overwrites", interaction.channel.overwrites, "permissions")
+
+    @channel.command(name="threads", description="Copy channel threads")
+    @log_as("/copy channel threads")
+    async def copy_channel_threads(self, interaction: Interaction):
+        if len(interaction.channel.threads) == 0:
+            await interaction.response.send_message(
+                "This channel doesn't have any non archived/locked/private threads, and/or can't see any threads.",
+                ephemeral=True)
+        else:
+            await self._copy_channel_item(interaction, "threads", interaction.channel.threads, "threads")
+
+    server = Group(name="server", description="Copy server related features")
+
+    # @server.command(name="")

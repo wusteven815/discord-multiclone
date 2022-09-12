@@ -40,7 +40,7 @@ class MultiClone(Bot):
 
         for ext in ("copy", "paste"):
             await self.load_extension(f"bot.{ext}")
-        await self.tree.sync()
+        # await self.tree.sync()
 
 
 multiclone = MultiClone()

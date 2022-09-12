@@ -7,11 +7,10 @@ from discord import Interaction
 from discord import Role
 from discord.app_commands import AppCommandError
 from discord.app_commands import command
-from discord.app_commands.checks import has_permissions
 from discord.app_commands.errors import CommandInvokeError
 from discord.app_commands.errors import MissingPermissions
-from discord.ext.commands import GroupCog
 from discord.channel import TextChannel
+from discord.ext.commands import GroupCog
 
 from bot.utils import get_log_decorator
 
@@ -33,7 +32,6 @@ class GuildError(Exception):
 class Paste(GroupCog, name="paste", description="Copy a Discord feature"):
 
     def __init__(self, bot):
-
         self.bot = bot
 
     @command(name="channel", description="Paste channel data")
@@ -61,14 +59,59 @@ class Paste(GroupCog, name="paste", description="Copy a Discord feature"):
         if channel["guild"] != interaction.guild_id:
             raise GuildError
 
-        # Run
-        await interaction.channel.edit(overwrites=channel["overwrites"])
-        await reply("Successfully pasted channel permissions.",
-                    embed=Embed(
-                        title="Changed permissions:",
-                        description="\n".join([f" - <@&{obj.id}>" if type(obj) == Role else f" - <@{obj.id}>"
-                                               for obj in channel['overwrites']]),
-                        colour=Colour.light_grey()))
+        # Paste
+        embed = Embed(title="Pasted the following features", colour=Colour.light_grey())
+
+        if "overwrites" in channel:
+            try:
+                await interaction.channel.edit(overwrites=channel["overwrites"])
+            except Forbidden:
+                embed.add_field(
+                    name="Permissions",
+                    value="Failed because the bot is missing permissions. The bot needs the `Manage server` and "
+                          "`Manage roles` permissions to paste permissions.",
+                    inline=False)
+            else:
+                embed.add_field(
+                    name="Permissions",
+                    value="\n".join([f" - <@&{obj.id}>" if type(obj) == Role else f" - <@{obj.id}>"
+                                     for obj in channel['overwrites']]),
+                    inline=False)
+
+        if "threads" in channel:
+
+            created_threads = []
+            did_not_create = False
+
+            for thread in channel["threads"]:
+
+                if thread.archived or thread.locked or thread.is_private():
+                    did_not_create = True
+                    continue
+
+                try:
+                    message = await interaction.channel.send(f"Copy pasted thread - **{thread.name}**")
+                    await interaction.channel.create_thread(
+                        name=thread.name,
+                        message=message,
+                        auto_archive_duration=thread.auto_archive_duration,
+                        reason=f"Copy pasted thread by {interaction.user}",
+                        invitable=thread.invitable,
+                        slowmode_delay=thread.slowmode_delay)
+                except Forbidden:
+                    created_threads.append(f" - ⚠ {thread.name}")
+                    did_not_create = True
+                else:
+                    created_threads.append(f" - {thread.name}")
+
+            if did_not_create:
+                created_threads.append("\nDid not create archived, locked, or private thread(s). ⚠ Warning threads "
+                                       "were not created because they are missing  the `Create public thread`, or "
+                                       "`Send message` permission (in this channel).")
+
+            embed.add_field(name="Threads", value="\n".join(created_threads), inline=False)
+
+        await reply(embed=embed)
 
     @paste_channel.error
     async def paste_channel_error(self, interaction: Interaction, err: AppCommandError):

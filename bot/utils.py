@@ -1,10 +1,22 @@
 from functools import wraps
+from hashlib import md5
 from inspect import signature
+from time import time
 
 from discord import Attachment
 from discord import Member
 from discord import Message
 from discord import Role
+
+from env import TOKEN
+
+
+def get_expiry():
+    return round(time()) + 600
+
+
+def get_key(interaction):
+    return md5(f"{TOKEN}{interaction.user.id}{interaction.channel_id}{round(time())}".encode("utf-8")).hexdigest()
 
 
 def get_log_decorator(logger):
